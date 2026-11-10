@@ -686,6 +686,15 @@ class XrSessionWrap : public Napi::ObjectWrap<XrSessionWrap> {
     auto out = Napi::Object::New(env);
     out.Set("valid", viewsValid_);
     out.Set("positionTracked", (vs.viewStateFlags & XR_VIEW_STATE_POSITION_TRACKED_BIT) != 0);
+    XrSpaceLocation headLocation{XR_TYPE_SPACE_LOCATION};
+    constexpr XrSpaceLocationFlags headValid =
+        XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+    if (viewsValid_ && XR_SUCCEEDED(xrLocateSpace(viewSpace_, appSpace_, li.displayTime, &headLocation)) &&
+        (headLocation.locationFlags & headValid) == headValid) {
+      auto head = Napi::Object::New(env);
+      SetPose(env, head, headLocation.pose);
+      out.Set("head", head);
+    }
     auto arr = Napi::Array::New(env, count);
     for (uint32_t i = 0; i < count; ++i) {
       auto v = Napi::Object::New(env);

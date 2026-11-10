@@ -71,6 +71,19 @@ module.exports = function installXRiftWebXR() {
   }
   const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
 
+  function viewerMatrix({ valid, head, views }) {
+    if (!valid) return IDENTITY
+    if (head) return quatToMat(head.position, head.orientation)
+    // 古いアドオンや VIEW 空間を取得できないフレームでは、左右眼の中間を使う。
+    const [left, right] = views
+    const a = left.orientation, b = right.orientation
+    const sign = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3] < 0 ? -1 : 1
+    const q = a.map((v, i) => v + sign * b[i])
+    const length = Math.hypot(...q)
+    const position = left.position.map((v, i) => (v + right.position[i]) / 2)
+    return quatToMat(position, q.map((v) => v / length))
+  }
+
   // ------------------------------------------------------------ 基本型
   class DOMPointRO { constructor(x = 0, y = 0, z = 0, w = 1) { this.x = x; this.y = y; this.z = z; this.w = w } }
 
@@ -341,8 +354,7 @@ module.exports = function installXRiftWebXR() {
       const input = B.syncInput()
       const near = this.renderState.depthNear, far = this.renderState.depthFar
       const views = lv.views.map((v) => ({ matrix: quatToMat(v.position, v.orientation), projection: projectionFromFov(v.fov, near, far) }))
-      const a = lv.views[0].position, b = lv.views[1].position
-      const head = quatToMat([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], lv.views[0].orientation)
+      const head = viewerMatrix(lv)
       const hands = input.map((h) => ({
         ...h,
         grip: h.grip ? quatToMat(h.grip.position, h.grip.orientation) : null,
@@ -417,7 +429,7 @@ module.exports = function installXRiftWebXR() {
   // ------------------------------------------------------------ XRSystem
   const SUPPORTED = new Set(['viewer', 'local', 'local-floor', 'bounded-floor', 'unbounded'])
   class XRSystem extends EventTarget {
-    constructor() { super(); this._active = null; this.ondevicechange = null; this.onsessiongranted = null }
+    constructor() { super(); this._active = null; this._starting = false; this.ondevicechange = null; this.onsessiongranted = null }
     async isSessionSupported(mode) {
       if (mode === 'inline') return true
       if (mode !== 'immersive-vr') return false
@@ -425,19 +437,24 @@ module.exports = function installXRiftWebXR() {
     }
     async requestSession(mode, init = {}) {
       if (mode !== 'immersive-vr') throw new DOMException(`"${mode}" is not supported`, 'NotSupportedError')
-      if (this._active) throw new DOMException('an immersive session is already active', 'InvalidStateError')
+      if (this._active || this._starting) throw new DOMException('an immersive session is already active or starting', 'InvalidStateError')
       for (const f of init.requiredFeatures || []) {
         if (!SUPPORTED.has(f)) throw new DOMException(`required feature "${f}" is not supported`, 'NotSupportedError')
       }
       const enabled = ['viewer', 'local', ...new Set([...(init.requiredFeatures || []), ...(init.optionalFeatures || [])].filter((f) => SUPPORTED.has(f)))]
-      const gpu = await B.prepareGPU()
-      if (!gpu.ok) throw new DOMException('WebGPU が使えません: ' + gpu.error, 'NotSupportedError')
-      const info = B.createSession()
-      if (!info || info.error) throw new DOMException('OpenXR: ' + (info && info.error), 'NotSupportedError')
-      log(`${info.backend === "openvr" ? "OpenVR" : "OpenXR"}: ${info.runtimeName} / ${info.systemName} / ${info.width}x${info.height} per eye`)
-      const s = new XRSession(info, mode, [...new Set(enabled)])
-      this._active = s
-      return s
+      this._starting = true
+      try {
+        const gpu = await B.prepareGPU()
+        if (!gpu.ok) throw new DOMException('WebGPU が使えません: ' + gpu.error, 'NotSupportedError')
+        const info = B.createSession()
+        if (!info || info.error) throw new DOMException('OpenXR: ' + (info && info.error), 'NotSupportedError')
+        log(`${info.backend === "openvr" ? "OpenVR" : "OpenXR"}: ${info.runtimeName} / ${info.systemName} / ${info.width}x${info.height} per eye`)
+        const s = new XRSession(info, mode, [...new Set(enabled)])
+        this._active = s
+        return s
+      } finally {
+        this._starting = false
+      }
     }
   }
   const xr = new XRSystem()

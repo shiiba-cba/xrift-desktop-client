@@ -263,6 +263,11 @@ class VrSessionWrap : public Napi::ObjectWrap<VrSessionWrap> {
       }
     }
 
+    UpdateEyeGeometry();
+    return "";
+  }
+
+  void UpdateEyeGeometry() {
     for (int eye = 0; eye < 2; ++eye) {
       eyeToHead_[eye] = system_->GetEyeToHeadTransform(static_cast<vr::EVREye>(eye));
       float l, r, t, b;
@@ -273,7 +278,6 @@ class VrSessionWrap : public Napi::ObjectWrap<VrSessionWrap> {
       fov_[eye][2] = std::atan(-t);
       fov_[eye][3] = std::atan(-b);
     }
-    return "";
   }
 
   void Cleanup() {
@@ -358,6 +362,11 @@ class VrSessionWrap : public Napi::ObjectWrap<VrSessionWrap> {
         push("exit", "quit");
       } else if (ev.eventType == vr::VREvent_TrackedDeviceActivated || ev.eventType == vr::VREvent_TrackedDeviceRoleChanged) {
         push("profiles", nullptr);
+      }
+      if (ev.eventType == vr::VREvent_IpdChanged || ev.eventType == vr::VREvent_LensDistortionChanged ||
+          (ev.trackedDeviceIndex == vr::k_unTrackedDeviceIndex_Hmd &&
+           (ev.eventType == vr::VREvent_TrackedDeviceUpdated || ev.eventType == vr::VREvent_TrackedDeviceActivated))) {
+        UpdateEyeGeometry();
       }
     }
     if (exitRequested_) {
@@ -491,6 +500,9 @@ class VrSessionWrap : public Napi::ObjectWrap<VrSessionWrap> {
     out.Set("valid", valid);
     out.Set("positionTracked", valid && hmd.eTrackingResult == vr::TrackingResult_Running_OK);
     out.Set("seq", static_cast<double>(seq_));
+    auto head = Napi::Object::New(env);
+    SetPose(env, head, ToPose(hmd.mDeviceToAbsoluteTracking));
+    out.Set("head", head);
     auto arr = Napi::Array::New(env, 2);
     for (uint32_t eye = 0; eye < 2; ++eye) {
       auto v = Napi::Object::New(env);
