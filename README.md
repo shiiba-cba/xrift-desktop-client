@@ -69,6 +69,7 @@ npm run package                          # 配布用 zip（dist/XRift-Client-win
 | `--scale <倍率>` | SteamVR 推奨解像度に対する倍率（既定 1） |
 | `--backend openxr` | OpenVR ではなく OpenXR で出力する（既定は openvr） |
 | `--stereo-offset <数値>` | 両眼の水平位置を個別の装着環境に合わせる試験用設定（既定 0）。例として `0.05` は左画像を右、右画像を左へ、片眼の画像幅の 5% ずつ移動 |
+| `--stereo-vertical <数値>` | 両眼の上下位置を調整する試験用設定（既定 0）。例として `0.005` は左画像を上、右画像を下へ、片眼の画像高さの 0.5% ずつ移動 |
 | `--register` / `--unregister` | ウィンドウを出さずに SteamVR へ登録 / 解除して終了（`--world` と組み合わせると開くワールドを固定） |
 
 ログイン状態は Electron のユーザーデータ（`%APPDATA%\XRift VR`）に保存され、リポジトリには含まれません。
