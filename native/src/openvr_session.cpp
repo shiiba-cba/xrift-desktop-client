@@ -156,6 +156,7 @@ class VrSessionWrap : public Napi::ObjectWrap<VrSessionWrap> {
     if (info.Length() > 0 && info[0].IsObject()) {
       auto o = info[0].As<Napi::Object>();
       if (o.Has("resolutionScale")) scale = o.Get("resolutionScale").ToNumber().DoubleValue();
+      if (o.Has("useExplicitPose")) useExplicitPose_ = o.Get("useExplicitPose").ToBoolean().Value();
     }
     if (const char* m = std::getenv("XRIFT_SUBMIT_MARGIN_MS")) submitMarginMs_ = std::atof(m);
     std::string err = InitAll(scale);
@@ -408,7 +409,7 @@ class VrSessionWrap : public Napi::ObjectWrap<VrSessionWrap> {
           const auto deadline = s_->lastWaitReturn_ + std::chrono::duration_cast<clock::duration>(period);
           s_->frameCv_.wait_until(lk, deadline, [&] { return !s_->uploadPending_; });
         }
-        if (s_->hasImage_ && s_->initialized_) {
+        if (s_->latchedMode_ && s_->hasImage_ && s_->initialized_) {
           fresh_ = s_->publishedGen_ != s_->submittedGen_;
           submitTiming_ = s_->SubmitLatest();
         }
@@ -663,7 +664,11 @@ class VrSessionWrap : public Napi::ObjectWrap<VrSessionWrap> {
       tex.eColorSpace = vr::ColorSpace_Auto;
       tex.mDeviceToAbsoluteTracking = pose;
       vr::VRTextureBounds_t bounds{0.0f, 0.0f, 1.0f, 1.0f};
-      compositor_->Submit(static_cast<vr::EVREye>(eye), &tex, &bounds, vr::Submit_TextureWithPose);
+      const auto flags = useExplicitPose_ ? vr::Submit_TextureWithPose : vr::Submit_Default;
+      const auto result = compositor_->Submit(static_cast<vr::EVREye>(eye), &tex, &bounds, flags);
+      if (result != vr::VRCompositorError_None) {
+        throw Napi::Error::New(env, "OpenVR Submit eye " + std::to_string(eye) + ": " + std::to_string(result));
+      }
     }
     lastSlot_ = slot;
     ForgetUploadTiming();
@@ -958,6 +963,7 @@ class VrSessionWrap : public Napi::ObjectWrap<VrSessionWrap> {
   bool submittedThisFrame_ = false;
   bool uploadBusy_ = false;
   bool latchedMode_ = false;
+  bool useExplicitPose_ = true;
   bool immediate_ = false;
   bool submittedSinceWait_ = false;
   bool waitInFlight_ = false;

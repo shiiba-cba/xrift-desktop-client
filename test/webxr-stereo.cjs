@@ -2,7 +2,7 @@ const assert = require('node:assert/strict')
 const { readFileSync } = require('node:fs')
 const { runInNewContext } = require('node:vm')
 
-async function check(head) {
+async function check(head, stereoOffset = 0) {
   const eye = (x, yaw, fov) => ({
     position: [x, 1.65, 0],
     orientation: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)],
@@ -18,7 +18,7 @@ async function check(head) {
   const bridge = {
     probe: () => ({ ok: true }),
     prepareGPU: async () => ({ ok: true }),
-    createSession: () => ({ width: 64, height: 64, backend: 'openvr' }),
+    createSession: () => ({ width: 64, height: 64, backend: 'openvr', stereoOffset }),
     pollEvents: () => {
       if (exiting) return [{ type: 'exit' }]
       if (started) return []
@@ -70,7 +70,9 @@ async function check(head) {
     const expectedSign = i === 0 ? -1 : 1
     assert.equal(view.eye, i === 0 ? 'left' : 'right')
     assert.equal(Math.sign(view.transform.orientation.y), expectedSign)
-    assert.equal(Math.sign(view.projectionMatrix[8]), expectedSign)
+    const [left, right] = views[i].fov.map(Math.tan)
+    const expectedProjectionCenter = (right + left) / (right - left) + 2 * expectedSign * stereoOffset
+    assert.ok(Math.abs(view.projectionMatrix[8] - expectedProjectionCenter) < 1e-6)
     assert.equal(session.renderState.baseLayer.getViewport(view).x, i * 64)
   }
   await session.end()
@@ -79,6 +81,7 @@ async function check(head) {
 ;(async () => {
   await check({ position: [0, 1.7, 0], orientation: [0, 0, 0, 1] })
   await check(undefined)
+  await check(undefined, 0.05)
   console.log('WebXR stereo and session checks passed')
 })().catch((error) => {
   console.error(error)

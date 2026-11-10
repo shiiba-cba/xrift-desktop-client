@@ -15,6 +15,7 @@ const resolutionScale = Number(arg('scale', '1')) || 1
 const forceRender = arg('force-render', '0') === '1'
 // openvr（既定。VRChat などと同じ SteamVR ネイティブ API）/ openxr
 const backend = arg('backend', 'openvr')
+const stereoOffset = Number(arg('stereo-offset', '0'))
 const addonPath = arg('addon', path.join(__dirname, '..', 'bin', 'xrift_openxr.node'))
 
 let native = null
@@ -145,11 +146,14 @@ const bridge = {
   },
   createSession() {
     try {
+      if (!Number.isFinite(stereoOffset) || Math.abs(stereoOffset) > 0.3) {
+        return { error: '--stereo-offset は -0.3 から 0.3 の数値で指定してください' }
+      }
       if (session) session.destroy()
       const n = loadNative()
       const Session = backend === 'openxr' ? n.OpenXRSession : n.OpenVRSession
       session = new Session({ appName: 'XRift VR', resolutionScale, referenceSpace: 'local-floor' })
-      return session.getInfo()
+      return { ...session.getInfo(), stereoOffset }
     } catch (err) {
       session = null
       return { error: String(err && err.message) }
