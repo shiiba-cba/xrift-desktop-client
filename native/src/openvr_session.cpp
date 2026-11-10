@@ -270,13 +270,13 @@ class VrSessionWrap : public Napi::ObjectWrap<VrSessionWrap> {
   void UpdateEyeGeometry() {
     for (int eye = 0; eye < 2; ++eye) {
       eyeToHead_[eye] = system_->GetEyeToHeadTransform(static_cast<vr::EVREye>(eye));
-      float l, r, t, b;
-      system_->GetProjectionRaw(static_cast<vr::EVREye>(eye), &l, &r, &t, &b);
-      // OpenVR は tan 値（上が負）。OpenXR 形式の角度（左, 右, 上, 下）にそろえる
-      fov_[eye][0] = std::atan(l);
-      fov_[eye][1] = std::atan(r);
-      fov_[eye][2] = std::atan(-t);
-      fov_[eye][3] = std::atan(-b);
+      // 右手系の投影行列から各辺の傾きを復元する。GetProjectionRaw の
+      // 上下に符号反転を適用すると、Beyond の垂直の投影中心が反転する。
+      const auto p = system_->GetProjectionMatrix(static_cast<vr::EVREye>(eye), 0.1f, 100.0f);
+      fov_[eye][0] = std::atan((p.m[0][2] - 1.0) / p.m[0][0]);
+      fov_[eye][1] = std::atan((p.m[0][2] + 1.0) / p.m[0][0]);
+      fov_[eye][2] = std::atan((p.m[1][2] + 1.0) / p.m[1][1]);
+      fov_[eye][3] = std::atan((p.m[1][2] - 1.0) / p.m[1][1]);
     }
   }
 
